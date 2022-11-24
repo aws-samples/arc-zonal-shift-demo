@@ -1,0 +1,1559 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Parameters" : {
+    "InstanceType" : {
+      "Description" : "WebServer EC2 instance type",
+      "Type" : "String",
+      "Default" : "t3.medium",
+      "AllowedValues" : [ "t3.medium" ],
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    },
+
+    "CanaryName": {
+      "Type": "String",
+      "AllowedPattern": "([a-z]+)",
+      "Default": "azs",
+      "MaxLength": 5
+    },
+
+    "CloudWatchCanaryNamespace": {
+      "Type": "String",
+      "Default": "ZonalShiftDemo",
+      "MaxLength": 21
+    },
+
+    "OperatorEMail": {
+      "Description": "EMail address to notify if there are any scaling operations",
+      "Type": "String",
+      "AllowedPattern": "([a-zA-Z0-9_\\-\\.]+)@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.)|(([a-zA-Z0-9\\-]+\\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\\]?)",
+      "ConstraintDescription": "must be a valid email address."
+    }
+  },
+
+  "Mappings" : {
+    "AWSInstanceType2Arch" : {
+      "t3.medium"   : { "Arch" : "HVM64"  }
+    },
+
+    "AWSRegionArch2AMI" : {
+      "us-east-1"        : {"HVM64" : "ami-0ff8a91507f77f867", "HVMG2" : "ami-0a584ac55a7631c0c"},
+      "us-west-2"        : {"HVM64" : "ami-a0cfeed8", "HVMG2" : "ami-08e2d37b6a0129927"},
+      "eu-west-1"        : {"HVM64" : "ami-047bb4163c506cd98", "HVMG2" : "ami-0a7c483d527806435"},
+      "ap-southeast-2"   : {"HVM64" : "ami-02a66f06b3557a897", "HVMG2" : "ami-0a9ce9fecc3d1daf8"},
+      "ap-northeast-1"   : {"HVM64" : "ami-06cd52961ce9f0d85", "HVMG2" : "ami-053cdd503598e4a9d"}
+    }
+  },
+ 
+  "Resources" : {
+    "NotificationTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "Subscription": [ { "Endpoint": { "Ref": "OperatorEMail" }, "Protocol": "email" } ]
+      }
+    },
+
+    "WebServerVPC":  {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+        "CidrBlock" : "192.168.0.0/16",
+        "EnableDnsHostnames" : true,
+        "EnableDnsSupport" : true
+      }
+    },
+
+   "WebServerIGW" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags" : [ ]
+      }
+   },
+
+   "WebserverIGWAttachment": {
+     "Type" : "AWS::EC2::VPCGatewayAttachment",
+     "Properties" : {
+       "InternetGatewayId" : { "Ref": "WebServerIGW" },
+       "VpcId" : { "Ref": "WebServerVPC" }
+     }
+   },
+
+    "WebserverSubnetA": {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : { 
+          "AvailabilityZone" : { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "a" ] ] },
+          "CidrBlock" : "192.168.1.0/24",
+          "MapPublicIpOnLaunch" : true,
+          "VpcId" : { "Ref": "WebServerVPC" }
+        }
+    },
+
+    "WebserverSubnetB": {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+          "AvailabilityZone" : { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "b" ] ] },
+          "CidrBlock" : "192.168.2.0/24",
+          "MapPublicIpOnLaunch" : true,
+          "VpcId" : { "Ref": "WebServerVPC" }
+        }
+    },
+
+    "WebserverSubnetC": {
+      "Type" : "AWS::EC2::Subnet",
+      "Properties" : {
+          "AvailabilityZone" : { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "c" ] ] },
+          "CidrBlock" : "192.168.3.0/24",
+          "MapPublicIpOnLaunch" : true,
+          "VpcId" : { "Ref": "WebServerVPC" }
+        }
+    },
+
+    "WebserverRouteTable": {
+      "Type" : "AWS::EC2::RouteTable",
+      "Properties": {
+          "VpcId": { "Ref": "WebServerVPC" }
+      }
+    },
+
+    "WebServerDefaultRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": { "Ref": "WebserverRouteTable" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "WebServerIGW" }
+      }
+    },
+
+    "WebServerSubnetRouteTableAssociationA": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "WebserverSubnetA" },
+        "RouteTableId": { "Ref": "WebserverRouteTable" }
+      }
+    },
+
+    "WebServerSubnetRouteTableAssociationB": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "WebserverSubnetB" },
+        "RouteTableId": { "Ref": "WebserverRouteTable" }
+      }
+    },
+
+    "WebServerSubnetRouteTableAssociationC": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "WebserverSubnetC" },
+        "RouteTableId": { "Ref": "WebserverRouteTable" }
+      }
+    },
+
+    "WebServerGroup" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Properties" : {
+        "AvailabilityZones": [
+          { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "a" ] ] },
+          { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "b" ] ] },
+          { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "c" ] ] } 
+        ],
+        "VPCZoneIdentifier": [ { "Ref": "WebserverSubnetA" }, { "Ref": "WebserverSubnetB" }, { "Ref": "WebserverSubnetC" }],
+        "LaunchConfigurationName" : { "Ref" : "WebServerLaunchConfig" },
+        "MinSize" : "6",
+        "MaxSize" : "9",
+        "TargetGroupARNs": [ { "Ref": "ElasticLoadBalancerTargetGroup" } ],
+        "NotificationConfigurations" : [ {
+          "TopicARN" : { "Ref" : "NotificationTopic" },
+          "NotificationTypes" : [ "autoscaling:EC2_INSTANCE_LAUNCH",
+                                  "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+                                  "autoscaling:EC2_INSTANCE_TERMINATE",
+                                  "autoscaling:EC2_INSTANCE_TERMINATE_ERROR"]
+        } ],
+        "Tags": [ 
+          {
+           "Key" : "Stack",
+           "PropagateAtLaunch" : true,
+           "Value" : "ZoneShiftExperiment"
+          }
+        ]
+      },
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : "PT15M",
+          "Count"   : "1"
+        }
+      },
+      "UpdatePolicy": {
+        "AutoScalingRollingUpdate": {
+          "MinInstancesInService": 1,
+          "MaxBatchSize": 1,
+          "PauseTime" : "PT15M",
+          "WaitOnResourceSignals": true
+        }
+      }
+    },
+
+    "WebServerInstanceRole": {
+       "Type": "AWS::IAM::Role",
+       "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": [
+                    "ec2.amazonaws.com"
+                  ]
+                },
+                "Action": [
+                  "sts:AssumeRole"
+                ]
+              }
+            ]
+          },
+          "ManagedPolicyArns": [
+            "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+          ]
+       }
+    },
+
+    "WebServerInstanceProfile": {
+       "Type": "AWS::IAM::InstanceProfile",
+       "Properties": {
+          "Path": "/",
+          "Roles": [ 
+             { "Ref": "WebServerInstanceRole" }
+          ]
+       }
+    },
+
+    "WebServerLaunchConfig" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata" : {
+        "Comment" : "Install a simple application",
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "packages" : {
+              "yum" : {
+                "httpd" : []
+              }
+            },
+           "commands" : {
+               "zeroes" : {
+                   "command" : "dd if=/dev/zero of=/var/www/html/1MB.txt bs=1M count=1",
+                   "cwd" : "~",
+                   "test" : "test ! -e /var/www/html/1MB.txt",
+                   "ignoreErrors" : "false"
+               }
+           },
+            "files" : {
+              "/var/www/html/index.html" : {
+                "content" : { "Fn::Join" : ["\n", [
+                  "<h1>Congratulations, you have successfully launched the ARC Zonal Shift CloudFormation sample.</h1>"
+                ]]},
+                "mode"    : "000644",
+                "owner"   : "root",
+                "group"   : "root"
+              },
+
+              "/etc/cfn/cfn-hup.conf" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[main]\n",
+                  "stack=", { "Ref" : "AWS::StackId" }, "\n",
+                  "region=", { "Ref" : "AWS::Region" }, "\n"
+                ]]},
+                "mode"    : "000400",
+                "owner"   : "root",
+                "group"   : "root"
+              },
+
+              "/etc/cfn/hooks.d/cfn-auto-reloader.conf" : {
+                "content": { "Fn::Join" : ["", [
+                  "[cfn-auto-reloader-hook]\n",
+                  "triggers=post.update\n",
+                  "path=Resources.WebServerLaunchConfig.Metadata.AWS::CloudFormation::Init\n",
+                  "action=/opt/aws/bin/cfn-init -v ",
+                  "         --stack ", { "Ref" : "AWS::StackName" },
+                  "         --resource WebServerLaunchConfig ",
+                  "         --region ", { "Ref" : "AWS::Region" }, "\n",
+                  "runas=root\n"
+                ]]}
+              }
+            },
+
+            "services" : {
+              "sysvinit" : {
+                "httpd"    : { "enabled" : "true", "ensureRunning" : "true" },
+                "cfn-hup" : { "enabled" : "true", "ensureRunning" : "true",
+                              "files" : ["/etc/cfn/cfn-hup.conf", "/etc/cfn/hooks.d/cfn-auto-reloader.conf"]}
+              }
+            }
+          }
+        }
+      },
+      "Properties" : {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" },
+                                          { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" }, "Arch" ] } ] },
+        "SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" } ],
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+             "#!/bin/bash -xe\n",
+             "yum update -y aws-cfn-bootstrap\n",
+
+             "/opt/aws/bin/cfn-init -v ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource WebServerLaunchConfig ",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+             "/opt/aws/bin/cfn-signal -e $? ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource WebServerGroup ",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n"
+        ]]}},
+        "IamInstanceProfile": { "Ref": "WebServerInstanceProfile" }
+      }
+    },
+
+    "ElasticLoadBalancer": {
+      "DependsOn": "WebServerIGW",
+      "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties" : {
+        "IpAddressType" : "ipv4",
+        "LoadBalancerAttributes" : [ ],
+        "Name" : "zonal-shift-demo",
+        "Scheme" : "internet-facing",
+        "Subnets" : [ { "Ref": "WebserverSubnetA" }, { "Ref": "WebserverSubnetB" } , { "Ref": "WebserverSubnetC" } ],
+        "Type" : "network"
+      }
+    },
+
+    "ElasticLoadBalancerListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+          "LoadBalancerArn" : { "Ref": "ElasticLoadBalancer" },
+          "Port": 80,
+          "Protocol": "TCP",
+          "DefaultActions": [ {
+          "Type": "forward",
+          "TargetGroupArn": { "Ref": "ElasticLoadBalancerTargetGroup" } } ]
+      }
+    },
+
+    "ElasticLoadBalancerTargetGroup": {
+      "Type" : "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties" : {
+        "HealthCheckPort" : 80,
+        "HealthCheckPath" : "/",
+        "HealthCheckProtocol" : "HTTP",
+        "IpAddressType" : "ipv4",
+        "Name" : "MyELBTG",
+        "Port" : 80,
+        "Protocol" : "TCP",
+        "VpcId" : { "Ref": "WebServerVPC" }
+      }
+    },
+
+    "InstanceSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable SSH access and HTTP from the load balancer only",
+        "SecurityGroupIngress" : [ {
+          "IpProtocol" : "tcp",
+          "FromPort" : 80,
+          "ToPort" : 80,
+          "CidrIp" : "0.0.0.0/0"
+        } ],
+        "VpcId" : { "Ref": "WebServerVPC" }
+      }
+    },
+
+    "PacketLossExperimentTemplate": {
+      "Type": "AWS::FIS::ExperimentTemplate", 
+      "Properties": {
+        "Description": "Inject packet loss an instances in AZ B",
+        "Tags": {
+          "Name": "PacketLossOnInstancesIn-AZ-B"
+        },
+        "Actions": {
+          "injectPacketLoss": {
+            "ActionId": "aws:ssm:send-command",
+            "Parameters": {
+              "duration": "PT32M",
+              "documentArn": { "Fn::Sub": [ "arn:aws:ssm:${REGION}::document/AWSFIS-Run-Network-Packet-Loss", { "REGION": { "Ref" : "AWS::Region" } } ] },
+              "documentParameters": "{\"LossPercent\":\"5\", \"Interface\":\"eth0\", \"DurationSeconds\":\"1800\", \"InstallDependencies\":\"True\"}"
+            },
+            "Targets": {
+              "Instances": "AZ-B-Instances"
+            }
+          }
+        },
+        "Targets": {
+          "AZ-B-Instances": {
+              "ResourceType": "aws:ec2:instance",
+              "ResourceTags": {
+                "Stack": "ZoneShiftExperiment"
+              },
+              "Filters": [
+                  {
+                      "Path": "Placement.AvailabilityZone",
+                      "Values": [   { "Fn::Sub": [ "${REGION}b", { "REGION": { "Ref" : "AWS::Region" } } ] } ]
+                  },
+                  {
+                      "Path": "State.Name",
+                      "Values": ["running"]
+                  },
+                  {
+                      "Path": "VpcId",
+                      "Values": [  { "Ref": "WebServerVPC" } ]
+                  }
+              ],
+              "SelectionMode": "ALL"
+          }
+        },
+        "StopConditions": [
+          {
+            "Source": "none"
+          }
+        ],
+        "RoleArn": {
+          "Fn::GetAtt": ["FISRole", "Arn"]
+        }
+      }
+    },
+
+    "StopApacheExperimentTemplate": {
+      "Type": "AWS::FIS::ExperimentTemplate", 
+      "Properties": {
+        "Description": "Stop Apache in AZ B",
+        "Tags": {
+          "Name": "StopApache-AZ-B"
+        },
+        "Actions": {
+          "injectPacketLoss": {
+            "ActionId": "aws:ssm:send-command",
+            "Parameters": {
+              "duration": "PT32M",
+              "documentArn": { "Fn::Sub": [ "arn:aws:ssm:${REGION}::document/AWSFIS-Run-Kill-Process", { "REGION": { "Ref" : "AWS::Region" } } ] },
+              "documentParameters": "{ \"ProcessName\":\"httpd\", \"Signal\":\"SIGTERM\" }"
+            },
+            "Targets": {
+              "Instances": "AZ-B-Instances"
+            }
+          }
+        },
+        "Targets": {
+          "AZ-B-Instances": {
+              "ResourceType": "aws:ec2:instance",
+              "ResourceTags": {
+                "Stack": "ZoneShiftExperiment"
+              },
+              "Filters": [
+                  {
+                      "Path": "Placement.AvailabilityZone",
+                      "Values": [   { "Fn::Sub": [ "${REGION}b", { "REGION": { "Ref" : "AWS::Region" } } ] } ]
+                  },
+                  {
+                      "Path": "State.Name",
+                      "Values": ["running"]
+                  },
+                  {
+                      "Path": "VpcId",
+                      "Values": [  { "Ref": "WebServerVPC" } ]
+                  }
+              ],
+              "SelectionMode": "ALL"
+          }
+        },
+        "StopConditions": [
+          {
+            "Source": "none"
+          }
+        ],
+        "RoleArn": {
+          "Fn::GetAtt": ["FISRole", "Arn"]
+        }
+      }
+    },
+
+    "FISRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                  "Service": "fis.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "FISRoleSSMActions",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "AllowFISExperimentRoleSSMReadOnly",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetAutomationExecution",
+                    "ssm:ListCommands"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "AllowFISExperimentRoleSSMSendCommand",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:SendCommand"
+                  ],
+                  "Resource": [
+                    "arn:aws:ec2:*:*:instance/*",
+                    "arn:aws:ssm:*:*:document/*"
+                  ]
+                },
+                {
+                  "Sid": "AllowFISExperimentRoleSSMCancelCommand",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:CancelCommand"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "AllowFISExperimentRoleSSMAutomation",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:StartAutomationExecution",
+                    "ssm:StopAutomationExecution"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "AllowFISExperimentRoleSSMAutomationPassRole",
+                  "Effect": "Allow",
+                  "Action": [
+                    "iam:PassRole"
+                  ],
+                  "Resource": "arn:aws:iam::*:*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "CloudWatchSyntheticsRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Fn::Sub": "CloudWatchSyntheticsRole-${CanaryName}-${AWS::Region}"
+        },
+        "Description": "CloudWatch Synthetics lambda execution role for running canaries",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {}
+            }
+          ]
+        }
+      }
+    },
+    "RolePermissions": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "Roles": [
+          {
+            "Ref": "CloudWatchSyntheticsRole"
+          }
+        ],
+        "PolicyName": {
+          "Fn::Sub": "CloudWatchSyntheticsPolicy-${CanaryName}-${AWS::Region}"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject",
+                "s3:GetBucketLocation"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:s3:::${ResultsBucket}/*"
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/cwsyn-test-*"
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListAllMyBuckets"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Resource": "*",
+              "Action": "cloudwatch:PutMetricData",
+              "Condition": {
+                "StringEquals": {
+                  "cloudwatch:namespace": [ "CloudWatchSynthetics", {"Ref": "CloudWatchCanaryNamespace"} ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ResultsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "cw-syn-results-${AWS::AccountId}-${AWS::Region}"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Canary": {
+      "Type": "AWS::Synthetics::Canary",
+      "Properties": {
+        "Name": {
+          "Fn::Sub": "${CanaryName}"
+        },
+        "Code": {
+          "Handler": "exports.handler",
+          "Script": { 
+            "Fn::Sub" : [ 
+               "const http = require('node:http'); 
+		const aws = require('aws-sdk'); 
+		const options = { hostname: '${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; 
+		var cloudwatch = new aws.CloudWatch(); 
+		async function timed_request() { 
+			return new Promise(function(resolve, reject) { 
+				startAt = process.hrtime.bigint(); 
+				http.get(options, (res) => { 
+					res.on('data', () => { }); 
+					res.on('end', () => { 
+						resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); 
+					}) 
+				}) 
+			}) } 
+			exports.handler = async function(event) { 
+				for (let i = 0; i < 60; i++) { 
+					var timing = await timed_request(); 
+					var params = { 
+						MetricData: [ { 
+							MetricName: 'ResponseTimes', Dimensions: [ { 
+								Name: 'Instance', Value: '${REGION}' } ], 
+							Timestamp: new Date, 
+							Unit: 'Milliseconds', 
+							Value: timing, } ], 
+							Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' }; 
+					cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); }); 
+					await new Promise(resolve => setTimeout(resolve, 500)); 
+				} 
+			}
+		",
+              { 
+                "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
+                "REGION":  { "Ref": "AWS::Region" },
+                "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
+              } 
+            ] 
+          }
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "CloudWatchSyntheticsRole",
+            "Arn"
+          ]
+        },
+        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RunConfig": {
+          "TimeoutInSeconds": 45
+        },
+        "ArtifactS3Location": {
+          "Fn::Join": [
+            "",
+            [
+              "s3://",
+              {
+                "Ref": "ResultsBucket"
+              }
+            ]
+          ]
+        },
+        "StartCanaryAfterCreation": true,
+        "Schedule": {
+          "Expression": "rate(1 minute)",
+          "DurationInSeconds": 0
+        },
+        "SuccessRetentionPeriod": 1,
+        "FailureRetentionPeriod": 1
+      }
+    },
+
+    "CanaryA": {
+      "Type": "AWS::Synthetics::Canary",
+      "Properties": {
+        "Name": { "Fn::Join": [ "", [ { "Ref": "CanaryName" }, "-", { "Ref" : "AWS::Region" }, "a" ] ] },
+        "Code": {
+          "Handler": "exports.handler",
+          "Script": { 
+            "Fn::Sub" : [ "
+		const http = require('node:http'); 
+		const aws = require('aws-sdk'); 
+		const options = { hostname: '${REGION}a.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; 
+		var cloudwatch = new aws.CloudWatch(); 
+		async function timed_request() { 
+			return new Promise(function(resolve, reject) { 
+				startAt = process.hrtime.bigint(); 
+				http.get(options, (res) => { 
+					res.on('data', () => { }); 
+					res.on('end', () => { 
+						resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); 
+					}) 
+				}) 
+			}) 
+		} 
+		exports.handler = async function(event) { 
+			for (let i = 0; i < 10; i++) { 
+				var timing = await timed_request(); 
+				var params = { MetricData: [ { 
+					MetricName: 'ResponseTimes', 
+					Dimensions: [ { Name: 'Instance', Value: '${REGION}a' } ], 
+					Timestamp: new Date, 
+					Unit: 'Milliseconds', Value: timing, } ], 
+					Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' 
+				}; 
+				cloudwatch.putMetricData(params, function(err, data) { 
+					if (err) throw(err, err.stack); 
+				}); 
+				await new Promise(resolve => setTimeout(resolve, 500)); 
+			} 
+		}",
+              { 
+                "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
+                "REGION":  { "Ref": "AWS::Region" },
+                "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
+              } 
+            ] 
+          }
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "CloudWatchSyntheticsRole",
+            "Arn"
+          ]
+        },
+        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RunConfig": {
+          "TimeoutInSeconds": 45
+        },
+        "ArtifactS3Location": {
+          "Fn::Join": [
+            "",
+            [
+              "s3://",
+              {
+                "Ref": "ResultsBucket"
+              }
+            ]
+          ]
+        },
+        "StartCanaryAfterCreation": true,
+        "Schedule": {
+          "Expression": "rate(1 minute)",
+          "DurationInSeconds": 0
+        },
+        "SuccessRetentionPeriod": 90,
+        "FailureRetentionPeriod": 180
+      }
+    },
+
+    "CanaryB": {
+      "Type": "AWS::Synthetics::Canary",
+      "Properties": {
+        "Name": { "Fn::Join": [ "", [ { "Ref": "CanaryName" }, "-", { "Ref" : "AWS::Region" }, "b" ] ] },
+        "Code": {
+          "Handler": "exports.handler",
+          "Script": { 
+            "Fn::Sub" : [ 
+              "const http = require('node:http'); const aws = require('aws-sdk'); const options = { hostname: '${REGION}b.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; var cloudwatch = new aws.CloudWatch(); async function timed_request() { return new Promise(function(resolve, reject) { startAt = process.hrtime.bigint(); http.get(options, (res) => { res.on('data', () => { }); res.on('end', () => { resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); }) }) }) } exports.handler = async function(event) { for (let i = 0; i < 10; i++) { var timing = await timed_request(); var params = { MetricData: [ { MetricName: 'ResponseTimes', Dimensions: [ { Name: 'Instance', Value: '${REGION}b' } ], Timestamp: new Date, Unit: 'Milliseconds', Value: timing, } ], Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' }; cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); }); await new Promise(resolve => setTimeout(resolve, 500)); } }",
+              { 
+                "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
+                "REGION":  { "Ref": "AWS::Region" },
+                "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
+              } 
+            ] 
+          }
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "CloudWatchSyntheticsRole",
+            "Arn"
+          ]
+        },
+        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RunConfig": {
+          "TimeoutInSeconds": 45
+        },
+        "ArtifactS3Location": {
+          "Fn::Join": [
+            "",
+            [
+              "s3://",
+              {
+                "Ref": "ResultsBucket"
+              }
+            ]
+          ]
+        },
+        "StartCanaryAfterCreation": true,
+        "Schedule": {
+          "Expression": "rate(1 minute)",
+          "DurationInSeconds": 0
+        },
+        "SuccessRetentionPeriod": 90,
+        "FailureRetentionPeriod": 180
+      }
+    },
+
+    "CanaryC": {
+      "Type": "AWS::Synthetics::Canary",
+      "Properties": {
+        "Name": { "Fn::Join": [ "", [ { "Ref": "CanaryName" }, "-", { "Ref" : "AWS::Region" }, "c" ] ] },
+        "Code": {
+          "Handler": "exports.handler",
+          "Script": { 
+            "Fn::Sub" : [ 
+              "const http = require('node:http'); const aws = require('aws-sdk'); const options = { hostname: '${REGION}c.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; var cloudwatch = new aws.CloudWatch(); async function timed_request() { return new Promise(function(resolve, reject) { startAt = process.hrtime.bigint(); http.get(options, (res) => { res.on('data', () => { }); res.on('end', () => { resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); }) }) }) } exports.handler = async function(event) { for (let i = 0; i < 10; i++) { var timing = await timed_request(); var params = { MetricData: [ { MetricName: 'ResponseTimes', Dimensions: [ { Name: 'Instance', Value: '${REGION}c' } ], Timestamp: new Date, Unit: 'Milliseconds', Value: timing, } ], Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' }; cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); }); await new Promise(resolve => setTimeout(resolve, 500)); } }",
+              { 
+                "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
+                "REGION":  { "Ref": "AWS::Region" },
+                "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
+              } 
+            ] 
+          }
+        },
+        "ExecutionRoleArn": {
+          "Fn::GetAtt": [
+            "CloudWatchSyntheticsRole",
+            "Arn"
+          ]
+        },
+        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RunConfig": {
+          "TimeoutInSeconds": 45
+        },
+        "ArtifactS3Location": {
+          "Fn::Join": [
+            "",
+            [
+              "s3://",
+              {
+                "Ref": "ResultsBucket"
+              }
+            ]
+          ]
+        },
+        "StartCanaryAfterCreation": true,
+        "Schedule": {
+          "Expression": "rate(1 minute)",
+          "DurationInSeconds": 0
+        },
+        "SuccessRetentionPeriod": 90,
+        "FailureRetentionPeriod": 180
+      }
+    },
+
+    "CanaryAlarm": {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmName": "Regional Canary",
+        "ActionsEnabled": true,
+        "OKActions": [],
+        "AlarmActions": [ {"Ref": "NotificationTopic"} ],
+        "InsufficientDataActions": [],
+        "EvaluationPeriods": 5,
+        "DatapointsToAlarm": 3,
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "TreatMissingData": "breaching",
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Namespace": {"Ref": "CloudWatchCanaryNamespace"},
+                "MetricName": "ResponseTimes",
+                "Dimensions": [
+                  {
+                    "Name": "Instance",
+                    "Value": {"Ref" : "AWS::Region"}
+                  }
+                ]
+              },
+              "Period": 60,
+              "Stat": "Maximum"
+            },
+            "Label": "Duration",
+            "ReturnData": true
+          },
+          {
+            "Id": "e1",
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 4)",
+            "Label": "Expected duration",
+            "ReturnData": true
+          }
+        ],
+        "ThresholdMetricId": "e1"
+      }
+    },
+
+    "CanaryAlarmA": {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmName": { "Fn::Join": [ "", [ {"Ref": "CanaryName"}, " ", {"Ref" : "AWS::Region"}, "a canary" ] ] },
+        "ActionsEnabled": true,
+        "OKActions": [],
+        "AlarmActions": [ {"Ref": "NotificationTopic"} ],
+        "InsufficientDataActions": [],
+        "EvaluationPeriods": 5,
+        "DatapointsToAlarm": 3,
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "TreatMissingData": "breaching",
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Namespace": {"Ref": "CloudWatchCanaryNamespace"},
+                "MetricName": "ResponseTimes",
+                "Dimensions": [
+                  {
+                    "Name": "Instance",
+                    "Value": { "Fn::Join": [ "", [ {"Ref" : "AWS::Region"}, "a" ] ] }
+                  }
+                ]
+              },
+              "Period": 60,
+              "Stat": "Maximum"
+            },
+            "Label": "Duration",
+            "ReturnData": true
+          },
+          {
+            "Id": "e1",
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 4)",
+            "Label": "Expected duration",
+            "ReturnData": true
+          }
+        ],
+        "ThresholdMetricId": "e1"
+      }
+    },
+
+    "CanaryAlarmB": {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmName": { "Fn::Join": [ "", [ {"Ref": "CanaryName"}, " ", {"Ref" : "AWS::Region"}, "b canary" ] ] },
+        "ActionsEnabled": true,
+        "OKActions": [],
+        "AlarmActions": [ {"Ref": "NotificationTopic"} ],
+        "InsufficientDataActions": [],
+        "EvaluationPeriods": 5,
+        "DatapointsToAlarm": 3,
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "TreatMissingData": "breaching",
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Namespace": {"Ref": "CloudWatchCanaryNamespace"},
+                "MetricName": "ResponseTimes",
+                "Dimensions": [
+                  {
+                    "Name": "Instance",
+                    "Value": { "Fn::Join": [ "", [ {"Ref" : "AWS::Region"}, "b" ] ] }
+                  }
+                ]
+              },
+              "Period": 60,
+              "Stat": "Maximum"
+            },
+            "Label": "Duration",
+            "ReturnData": true
+          },
+          {
+            "Id": "e1",
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 4)",
+            "Label": "Expected duration",
+            "ReturnData": true
+          }
+        ],
+        "ThresholdMetricId": "e1"
+      }
+    },
+
+    "CanaryAlarmC": {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmName": { "Fn::Join": [ "", [ {"Ref": "CanaryName"}, " ", {"Ref" : "AWS::Region"}, "c canary" ] ] },
+        "ActionsEnabled": true,
+        "OKActions": [],
+        "AlarmActions": [ {"Ref": "NotificationTopic"} ],
+        "InsufficientDataActions": [],
+        "EvaluationPeriods": 5,
+        "DatapointsToAlarm": 3,
+        "ComparisonOperator": "LessThanLowerOrGreaterThanUpperThreshold",
+        "TreatMissingData": "breaching",
+        "Metrics": [
+          {
+            "Id": "m1",
+            "MetricStat": {
+              "Metric": {
+                "Namespace": {"Ref": "CloudWatchCanaryNamespace"},
+                "MetricName": "ResponseTimes",
+                "Dimensions": [
+                  {
+                    "Name": "Instance",
+                    "Value": { "Fn::Join": [ "", [ {"Ref" : "AWS::Region"}, "c" ] ] }
+                  }
+                ]
+              },
+              "Period": 60,
+              "Stat": "Maximum"
+            },
+            "Label": "Duration",
+            "ReturnData": true
+          },
+          {
+            "Id": "e1",
+            "Expression": "ANOMALY_DETECTION_BAND(m1, 4)",
+            "Label": "Expected duration",
+            "ReturnData": true
+          }
+        ],
+        "ThresholdMetricId": "e1"
+      }
+    },
+
+    "WebServerDashboard": {
+      "Type" : "AWS::CloudWatch::Dashboard",
+      "Properties" : {
+        "DashboardName": {"Fn::Join": [ "", [ "ARCZonalShiftDemo-", { "Ref" : "AWS::Region" } ] ] },
+        "DashboardBody": {"Fn::Sub": [
+" {
+  \"start\": \"-PT1H\",
+  \"periodOverride\": \"inherit\",
+  \"widgets\": [
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 3,
+      \"x\": 1,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"${CLOUDWATCH_CANARY_NAMESPACE}\", \"ResponseTimes\", \"Instance\", \"${REGION}\", { \"id\": \"m1\", \"color\": \"#ff7f0e\", \"label\": \"Time\" } ],
+          [ { \"id\": \"e1\", \"expression\": \"ANOMALY_DETECTION_BAND(m1, 4)\", \"label\": \"Expected time\", \"region\": \"${REGION}\" } ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"p99\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0
+          }
+        },
+        \"title\": \"Canary Response Times (p99)\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 3,
+      \"x\": 5,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"${CLOUDWATCH_CANARY_NAMESPACE}\", \"ResponseTimes\", \"Instance\", \"${REGION}a\", { \"id\": \"m1\", \"color\": \"#ff7f0e\", \"label\": \"Time\" } ],
+          [ { \"id\": \"e1\", \"expression\": \"ANOMALY_DETECTION_BAND(m1, 4)\", \"label\": \"Expected time\", \"region\": \"${REGION}\" } ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"p99\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0
+          }
+        },
+        \"title\": \"Canary Response Times (p99)\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 3,
+      \"x\": 9,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"${CLOUDWATCH_CANARY_NAMESPACE}\", \"ResponseTimes\", \"Instance\", \"${REGION}b\", { \"id\": \"m1\", \"color\": \"#ff7f0e\", \"label\": \"Time\" } ],
+          [ { \"id\": \"e1\", \"expression\": \"ANOMALY_DETECTION_BAND(m1, 4)\", \"label\": \"Expected time\", \"region\": \"${REGION}\" } ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"p99\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0
+          }
+        },
+        \"title\": \"Canary Response Times (p99)\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 3,
+      \"x\": 13,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"${CLOUDWATCH_CANARY_NAMESPACE}\", \"ResponseTimes\", \"Instance\", \"${REGION}c\", { \"id\": \"m1\", \"color\": \"#ff7f0e\", \"label\": \"Time\" } ],
+          [ { \"id\": \"e1\", \"expression\": \"ANOMALY_DETECTION_BAND(m1, 4)\", \"label\": \"Expected time\", \"region\": \"${REGION}\" } ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"p99\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0
+          }
+        },
+        \"title\": \"Canary Response Times (p99)\"
+      }
+    },
+    {
+      \"height\": 2,
+      \"width\": 4,
+      \"y\": 1,
+      \"x\": 1,
+      \"type\": \"alarm\",
+      \"properties\": {
+        \"title\": \"${REGION}\",
+        \"alarms\": [
+          \"arn:aws:cloudwatch:${REGION}:${ACCOUNTID}:alarm:Regional Canary\"
+        ]
+      }
+    },
+    {
+      \"height\": 2,
+      \"width\": 4,
+      \"y\": 1,
+      \"x\": 5,
+      \"type\": \"alarm\",
+      \"properties\": {
+        \"title\": \"${REGION}a ${AZ1ID}\",
+        \"alarms\": [
+          \"arn:aws:cloudwatch:${REGION}:${ACCOUNTID}:alarm:azs ${REGION}a canary\"
+        ]
+      }
+    },
+    {
+      \"height\": 2,
+      \"width\": 4,
+      \"y\": 1,
+      \"x\": 9,
+      \"type\": \"alarm\",
+      \"properties\": {
+        \"title\": \"${REGION}b ${AZ2ID}\",
+        \"alarms\": [
+          \"arn:aws:cloudwatch:${REGION}:${ACCOUNTID}:alarm:azs ${REGION}b canary\"
+        ]
+      }
+    },
+    {
+      \"height\": 2,
+      \"width\": 4,
+      \"y\": 1,
+      \"x\": 13,
+      \"type\": \"alarm\",
+      \"properties\": {
+        \"title\": \"${REGION}c ${AZ3ID}\",
+        \"alarms\": [
+          \"arn:aws:cloudwatch:${REGION}:${ACCOUNTID}:alarm:azs ${REGION}c canary\"
+        ]
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 9,
+      \"x\": 5,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"UnHealthyHostCount\", \"TargetGroup\", \"${TGFNAME}\", \"AvailabilityZone\", \"${REGION}a\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"stat\": \"Average\",
+        \"period\": 60,
+        \"title\": \"NLB UnHealthyHostCount\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 9,
+      \"x\": 9,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"UnHealthyHostCount\", \"TargetGroup\", \"${TGFNAME}\", \"AvailabilityZone\", \"${REGION}b\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"stat\": \"Average\",
+        \"period\": 60,
+        \"title\": \"NLB UnHealthyHostCount\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 9,
+      \"x\": 13,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"UnHealthyHostCount\", \"TargetGroup\", \"${TGFNAME}\", \"AvailabilityZone\", \"${REGION}c\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"stat\": \"Average\",
+        \"period\": 60,
+        \"title\": \"NLB UnHealthyHostCount\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 9,
+      \"x\": 1,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"UnHealthyHostCount\", \"TargetGroup\", \"${TGFNAME}\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"stat\": \"Average\",
+        \"period\": 60,
+        \"title\": \"NLB UnhealthyHost Count\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 12,
+      \"x\": 5,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"ProcessedBytes\", \"AvailabilityZone\", \"${REGION}a\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0,
+            \"max\": 45000000
+          }
+        },
+        \"title\": \"NLB ProcessedBytes\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 12,
+      \"x\": 9,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"ProcessedBytes\", \"AvailabilityZone\", \"${REGION}b\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0,
+            \"max\": 45000000
+          }
+        },
+        \"title\": \"NLB ProcessedBytes\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 12,
+      \"x\": 13,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"ProcessedBytes\", \"AvailabilityZone\", \"${REGION}c\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0,
+            \"max\": 45000000
+          }
+        },
+        \"title\": \"NLB ProcessedBytes\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 12,
+      \"x\": 1,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"AWS/NetworkELB\", \"ProcessedBytes\", \"LoadBalancer\", \"${LBFNAME}\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"yAxis\": {
+          \"left\": {
+            \"min\": 0,
+            \"max\": 110000000
+          }
+        },
+        \"title\": \"NLB ProcessedBytes\"
+      }
+    },
+    {
+      \"height\": 1,
+      \"width\": 2,
+      \"y\": 0,
+      \"x\": 2,
+      \"type\": \"text\",
+      \"properties\": {
+        \"markdown\": \"## &nbsp; Customer\",
+        \"background\": \"transparent\"
+      }
+    },
+    {
+      \"height\": 1,
+      \"width\": 2,
+      \"y\": 0,
+      \"x\": 6,
+      \"type\": \"text\",
+      \"properties\": {
+        \"markdown\": \"## ${AZ1ID}\",
+        \"background\": \"transparent\"
+      }
+    },
+    {
+      \"height\": 1,
+      \"width\": 2,
+      \"y\": 0,
+      \"x\": 10,
+      \"type\": \"text\",
+      \"properties\": {
+        \"markdown\": \"## ${AZ2ID}\",
+        \"background\": \"transparent\"
+      }
+    },
+    {
+      \"height\": 1,
+      \"width\": 2,
+      \"y\": 0,
+      \"x\": 14,
+      \"type\": \"text\",
+      \"properties\": {
+        \"markdown\": \"## ${AZ3ID}\",
+        \"background\": \"transparent\"
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 6,
+      \"x\": 1,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"CloudWatchSynthetics\", \"5xx\", \"CanaryName\", \"azs\" ],
+          [ \".\", \"4xx\", \".\", \".\" ],
+          [ \".\", \"2xx\", \".\", \".\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"title\": \"Canary Response Codes\",
+        \"legend\": {
+          \"position\": \"right\"
+        }
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 6,
+      \"x\": 5,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"CloudWatchSynthetics\", \"5xx\", \"CanaryName\", \"azs-${REGION}a\" ],
+          [ \".\", \"4xx\", \".\", \".\" ],
+          [ \".\", \"2xx\", \".\", \".\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"title\": \"Canary Response Codes\",
+        \"legend\": {
+          \"position\": \"right\"
+        }
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 6,
+      \"x\": 9,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"CloudWatchSynthetics\", \"5xx\", \"CanaryName\", \"azs-${REGION}b\" ],
+          [ \".\", \"4xx\", \".\", \".\" ],
+          [ \".\", \"2xx\", \".\", \".\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"title\": \"Canary Response Codes\",
+        \"legend\": {
+          \"position\": \"right\"
+        }
+      }
+    },
+    {
+      \"height\": 3,
+      \"width\": 4,
+      \"y\": 6,
+      \"x\": 13,
+      \"type\": \"metric\",
+      \"properties\": {
+        \"metrics\": [
+          [ \"CloudWatchSynthetics\", \"5xx\", \"CanaryName\", \"azs-${REGION}c\" ],
+          [ \".\", \"4xx\", \".\", \".\" ],
+          [ \".\", \"2xx\", \".\", \".\" ]
+        ],
+        \"view\": \"timeSeries\",
+        \"stacked\": false,
+        \"region\": \"${REGION}\",
+        \"period\": 60,
+        \"stat\": \"Average\",
+        \"title\": \"Canary Response Codes\",
+        \"legend\": {
+          \"position\": \"right\"
+        }
+      }
+    }
+  ]
+}", 
+            { 
+              "REGION":    {"Ref": "AWS::Region"},
+              "ACCOUNTID": {"Ref": "AWS::AccountId"},
+              "TGFNAME":   {"Fn::GetAtt": "ElasticLoadBalancerTargetGroup.TargetGroupFullName"},
+              "LBFNAME":   {"Fn::GetAtt": "ElasticLoadBalancer.LoadBalancerFullName"},
+              "AZ1ID":   {"Fn::GetAtt": "WebserverSubnetA.AvailabilityZoneId"},
+              "AZ2ID":   {"Fn::GetAtt": "WebserverSubnetB.AvailabilityZoneId"},
+              "AZ3ID":   {"Fn::GetAtt": "WebserverSubnetC.AvailabilityZoneId"},
+              "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs" : {
+    "URL" : {
+      "Description" : "The URL of the website",
+      "Value" :  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "ElasticLoadBalancer", "DNSName" ]}]]}
+    }
+  }
+}
+
