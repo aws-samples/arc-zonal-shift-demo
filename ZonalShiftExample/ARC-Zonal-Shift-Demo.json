@@ -37,14 +37,18 @@
     },
 
     "AWSRegionArch2AMI" : {
-      "us-east-1"        : {"HVM64" : "ami-0ff8a91507f77f867", "HVMG2" : "ami-0a584ac55a7631c0c"},
-      "us-west-2"        : {"HVM64" : "ami-a0cfeed8", "HVMG2" : "ami-08e2d37b6a0129927"},
-      "eu-west-1"        : {"HVM64" : "ami-047bb4163c506cd98", "HVMG2" : "ami-0a7c483d527806435"},
-      "ap-southeast-2"   : {"HVM64" : "ami-02a66f06b3557a897", "HVMG2" : "ami-0a9ce9fecc3d1daf8"},
-      "ap-northeast-1"   : {"HVM64" : "ami-06cd52961ce9f0d85", "HVMG2" : "ami-053cdd503598e4a9d"}
+      "us-east-1"        : {"HVM64" : "ami-09d3b3274b6c5d4aa" },
+      "us-east-2"        : {"HVM64" : "ami-089a545a9ed9893b6" },
+      "us-west-2"        : {"HVM64" : "ami-0d593311db5abb72b" },
+      "eu-west-1"        : {"HVM64" : "ami-0ee415e1b8b71305f" },
+      "eu-central-1"     : {"HVM64" : "ami-070b208e993b59cea" },
+      "eu-north-1"       : {"HVM64" : "ami-05c42683296709b61" },
+      "ap-northeast-1"   : {"HVM64" : "ami-0de5311b2a443fb89" },
+      "ap-southeast-2"   : {"HVM64" : "ami-02a66f06b3557a897" },
+      "ap-southeast-3"   : {"HVM64" : "ami-02553a322e00d1ef5" }
     }
   },
- 
+
   "Resources" : {
     "NotificationTopic": {
       "Type": "AWS::SNS::Topic",
@@ -79,7 +83,7 @@
 
     "WebserverSubnetA": {
       "Type" : "AWS::EC2::Subnet",
-      "Properties" : { 
+      "Properties" : {
           "AvailabilityZone" : { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "a" ] ] },
           "CidrBlock" : "192.168.1.0/24",
           "MapPublicIpOnLaunch" : true,
@@ -153,7 +157,7 @@
         "AvailabilityZones": [
           { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "a" ] ] },
           { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "b" ] ] },
-          { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "c" ] ] } 
+          { "Fn::Join": [ "", [ { "Ref" : "AWS::Region" }, "c" ] ] }
         ],
         "VPCZoneIdentifier": [ { "Ref": "WebserverSubnetA" }, { "Ref": "WebserverSubnetB" }, { "Ref": "WebserverSubnetC" }],
         "LaunchConfigurationName" : { "Ref" : "WebServerLaunchConfig" },
@@ -167,7 +171,7 @@
                                   "autoscaling:EC2_INSTANCE_TERMINATE",
                                   "autoscaling:EC2_INSTANCE_TERMINATE_ERROR"]
         } ],
-        "Tags": [ 
+        "Tags": [
           {
            "Key" : "Stack",
            "PropagateAtLaunch" : true,
@@ -220,7 +224,7 @@
        "Type": "AWS::IAM::InstanceProfile",
        "Properties": {
           "Path": "/",
-          "Roles": [ 
+          "Roles": [
              { "Ref": "WebServerInstanceRole" }
           ]
        }
@@ -367,7 +371,7 @@
     },
 
     "PacketLossExperimentTemplate": {
-      "Type": "AWS::FIS::ExperimentTemplate", 
+      "Type": "AWS::FIS::ExperimentTemplate",
       "Properties": {
         "Description": "Inject packet loss an instances in AZ B",
         "Tags": {
@@ -421,7 +425,7 @@
     },
 
     "StopApacheExperimentTemplate": {
-      "Type": "AWS::FIS::ExperimentTemplate", 
+      "Type": "AWS::FIS::ExperimentTemplate",
       "Properties": {
         "Description": "Stop Apache in AZ B",
         "Tags": {
@@ -654,44 +658,44 @@
         },
         "Code": {
           "Handler": "exports.handler",
-          "Script": { 
-            "Fn::Sub" : [ 
-               "const http = require('node:http'); 
-		const aws = require('aws-sdk'); 
-		const options = { hostname: '${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; 
-		var cloudwatch = new aws.CloudWatch(); 
-		async function timed_request() { 
-			return new Promise(function(resolve, reject) { 
-				startAt = process.hrtime.bigint(); 
-				http.get(options, (res) => { 
-					res.on('data', () => { }); 
-					res.on('end', () => { 
-						resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); 
-					}) 
-				}) 
-			}) } 
-			exports.handler = async function(event) { 
-				for (let i = 0; i < 60; i++) { 
-					var timing = await timed_request(); 
-					var params = { 
-						MetricData: [ { 
-							MetricName: 'ResponseTimes', Dimensions: [ { 
-								Name: 'Instance', Value: '${REGION}' } ], 
-							Timestamp: new Date, 
-							Unit: 'Milliseconds', 
-							Value: timing, } ], 
-							Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' }; 
-					cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); }); 
-					await new Promise(resolve => setTimeout(resolve, 500)); 
-				} 
+          "Script": {
+            "Fn::Sub" : [
+               "const http = require('node:http');
+		const aws = require('aws-sdk');
+		const options = { hostname: '${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 };
+		var cloudwatch = new aws.CloudWatch();
+		async function timed_request() {
+			return new Promise(function(resolve, reject) {
+				startAt = process.hrtime.bigint();
+				http.get(options, (res) => {
+					res.on('data', () => { });
+					res.on('end', () => {
+						resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000)));
+					})
+				})
+			}) }
+			exports.handler = async function(event) {
+				for (let i = 0; i < 60; i++) {
+					var timing = await timed_request();
+					var params = {
+						MetricData: [ {
+							MetricName: 'ResponseTimes', Dimensions: [ {
+								Name: 'Instance', Value: '${REGION}' } ],
+							Timestamp: new Date,
+							Unit: 'Milliseconds',
+							Value: timing, } ],
+							Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' };
+					cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); });
+					await new Promise(resolve => setTimeout(resolve, 500));
+				}
 			}
 		",
-              { 
+              {
                 "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
                 "REGION":  { "Ref": "AWS::Region" },
                 "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
-              } 
-            ] 
+              }
+            ]
           }
         },
         "ExecutionRoleArn": {
@@ -731,45 +735,45 @@
         "Name": { "Fn::Join": [ "", [ { "Ref": "CanaryName" }, "-", { "Ref" : "AWS::Region" }, "a" ] ] },
         "Code": {
           "Handler": "exports.handler",
-          "Script": { 
+          "Script": {
             "Fn::Sub" : [ "
-		const http = require('node:http'); 
-		const aws = require('aws-sdk'); 
-		const options = { hostname: '${REGION}a.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; 
-		var cloudwatch = new aws.CloudWatch(); 
-		async function timed_request() { 
-			return new Promise(function(resolve, reject) { 
-				startAt = process.hrtime.bigint(); 
-				http.get(options, (res) => { 
-					res.on('data', () => { }); 
-					res.on('end', () => { 
-						resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); 
-					}) 
-				}) 
-			}) 
-		} 
-		exports.handler = async function(event) { 
-			for (let i = 0; i < 10; i++) { 
-				var timing = await timed_request(); 
-				var params = { MetricData: [ { 
-					MetricName: 'ResponseTimes', 
-					Dimensions: [ { Name: 'Instance', Value: '${REGION}a' } ], 
-					Timestamp: new Date, 
-					Unit: 'Milliseconds', Value: timing, } ], 
-					Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' 
-				}; 
-				cloudwatch.putMetricData(params, function(err, data) { 
-					if (err) throw(err, err.stack); 
-				}); 
-				await new Promise(resolve => setTimeout(resolve, 500)); 
-			} 
+		const http = require('node:http');
+		const aws = require('aws-sdk');
+		const options = { hostname: '${REGION}a.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 };
+		var cloudwatch = new aws.CloudWatch();
+		async function timed_request() {
+			return new Promise(function(resolve, reject) {
+				startAt = process.hrtime.bigint();
+				http.get(options, (res) => {
+					res.on('data', () => { });
+					res.on('end', () => {
+						resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000)));
+					})
+				})
+			})
+		}
+		exports.handler = async function(event) {
+			for (let i = 0; i < 10; i++) {
+				var timing = await timed_request();
+				var params = { MetricData: [ {
+					MetricName: 'ResponseTimes',
+					Dimensions: [ { Name: 'Instance', Value: '${REGION}a' } ],
+					Timestamp: new Date,
+					Unit: 'Milliseconds', Value: timing, } ],
+					Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}'
+				};
+				cloudwatch.putMetricData(params, function(err, data) {
+					if (err) throw(err, err.stack);
+				});
+				await new Promise(resolve => setTimeout(resolve, 500));
+			}
 		}",
-              { 
+              {
                 "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
                 "REGION":  { "Ref": "AWS::Region" },
                 "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
-              } 
-            ] 
+              }
+            ]
           }
         },
         "ExecutionRoleArn": {
@@ -809,15 +813,45 @@
         "Name": { "Fn::Join": [ "", [ { "Ref": "CanaryName" }, "-", { "Ref" : "AWS::Region" }, "b" ] ] },
         "Code": {
           "Handler": "exports.handler",
-          "Script": { 
-            "Fn::Sub" : [ 
-              "const http = require('node:http'); const aws = require('aws-sdk'); const options = { hostname: '${REGION}b.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; var cloudwatch = new aws.CloudWatch(); async function timed_request() { return new Promise(function(resolve, reject) { startAt = process.hrtime.bigint(); http.get(options, (res) => { res.on('data', () => { }); res.on('end', () => { resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); }) }) }) } exports.handler = async function(event) { for (let i = 0; i < 10; i++) { var timing = await timed_request(); var params = { MetricData: [ { MetricName: 'ResponseTimes', Dimensions: [ { Name: 'Instance', Value: '${REGION}b' } ], Timestamp: new Date, Unit: 'Milliseconds', Value: timing, } ], Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' }; cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); }); await new Promise(resolve => setTimeout(resolve, 500)); } }",
-              { 
+          "Script": {
+            "Fn::Sub" : [ "
+		const http = require('node:http');
+		const aws = require('aws-sdk');
+		const options = {
+		hostname: '${REGION}b.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 };
+		var cloudwatch = new aws.CloudWatch();
+		async function timed_request() {
+			return new Promise(function(resolve, reject) {
+				startAt = process.hrtime.bigint();
+				http.get(options, (res) => {
+					res.on('data', () => { });
+					res.on('end', () => { resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); })
+				})
+			})
+		}
+		exports.handler = async function(event) {
+			for (let i = 0; i < 10; i++) {
+				var timing = await timed_request(); var params = {
+					MetricData: [ {
+						MetricName: 'ResponseTimes',
+						Dimensions: [ { Name: 'Instance', Value: '${REGION}b' } ],
+						Timestamp: new Date, Unit: 'Milliseconds',
+						Value: timing, }
+					],
+					Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}'
+				};
+				cloudwatch.putMetricData(params, function(err, data) {
+					if (err) throw(err, err.stack);
+				});
+				await new Promise(resolve => setTimeout(resolve, 500));
+			}
+		}",
+              {
                 "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
                 "REGION":  { "Ref": "AWS::Region" },
                 "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
-              } 
-            ] 
+              }
+            ]
           }
         },
         "ExecutionRoleArn": {
@@ -857,15 +891,45 @@
         "Name": { "Fn::Join": [ "", [ { "Ref": "CanaryName" }, "-", { "Ref" : "AWS::Region" }, "c" ] ] },
         "Code": {
           "Handler": "exports.handler",
-          "Script": { 
-            "Fn::Sub" : [ 
-              "const http = require('node:http'); const aws = require('aws-sdk'); const options = { hostname: '${REGION}c.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 }; var cloudwatch = new aws.CloudWatch(); async function timed_request() { return new Promise(function(resolve, reject) { startAt = process.hrtime.bigint(); http.get(options, (res) => { res.on('data', () => { }); res.on('end', () => { resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); }) }) }) } exports.handler = async function(event) { for (let i = 0; i < 10; i++) { var timing = await timed_request(); var params = { MetricData: [ { MetricName: 'ResponseTimes', Dimensions: [ { Name: 'Instance', Value: '${REGION}c' } ], Timestamp: new Date, Unit: 'Milliseconds', Value: timing, } ], Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}' }; cloudwatch.putMetricData(params, function(err, data) { if (err) throw(err, err.stack); }); await new Promise(resolve => setTimeout(resolve, 500)); } }",
-              { 
+          "Script": {
+            "Fn::Sub" : [ "
+		const http = require('node:http');
+		const aws = require('aws-sdk');
+		const options = {
+		hostname: '${REGION}c.${ELB_DNS}', port: 80, path: '/1MB.txt', agent: false,  timeout: 300 };
+		var cloudwatch = new aws.CloudWatch();
+		async function timed_request() {
+			return new Promise(function(resolve, reject) {
+				startAt = process.hrtime.bigint();
+				http.get(options, (res) => {
+					res.on('data', () => { });
+					res.on('end', () => { resolve(Number((process.hrtime.bigint() - startAt) / BigInt(1000000))); })
+				})
+			})
+		}
+		exports.handler = async function(event) {
+			for (let i = 0; i < 10; i++) {
+				var timing = await timed_request(); var params = {
+					MetricData: [ {
+						MetricName: 'ResponseTimes',
+						Dimensions: [ { Name: 'Instance', Value: '${REGION}c' } ],
+						Timestamp: new Date, Unit: 'Milliseconds',
+						Value: timing, }
+					],
+					Namespace: '${CLOUDWATCH_CANARY_NAMESPACE}'
+				};
+				cloudwatch.putMetricData(params, function(err, data) {
+					if (err) throw(err, err.stack);
+				});
+				await new Promise(resolve => setTimeout(resolve, 500));
+			}
+		}",
+              {
                 "ELB_DNS": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ] },
                 "REGION":  { "Ref": "AWS::Region" },
                 "CLOUDWATCH_CANARY_NAMESPACE": { "Ref": "CloudWatchCanaryNamespace" }
-              } 
-            ] 
+              }
+            ]
           }
         },
         "ExecutionRoleArn": {
@@ -1533,8 +1597,8 @@
       }
     }
   ]
-}", 
-            { 
+}",
+            {
               "REGION":    {"Ref": "AWS::Region"},
               "ACCOUNTID": {"Ref": "AWS::AccountId"},
               "TGFNAME":   {"Fn::GetAtt": "ElasticLoadBalancerTargetGroup.TargetGroupFullName"},

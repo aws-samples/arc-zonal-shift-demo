@@ -14,6 +14,17 @@ It creates:
 These can be used as examples to create both hard and grey failures and use
 ELB health checks or Zonal Shift to recover from them.
 
+## How to deploy the template
+
+Use the command below, but swap in a valid email address
+
+% aws cloudformation create-stack \
+        --region $REGION \
+        --stack-name arc-zonal-shift-demo \
+        --template-body file://ARC-Zonal-Shift-Demo.json  \
+        --capabilities CAPABILITY_NAMED_IAM \
+        --parameters 'ParameterKey=OperatorEMail,ParameterValue=$EMAIL'
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
