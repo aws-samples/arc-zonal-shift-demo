@@ -432,7 +432,7 @@
           "Name": "StopApache-AZ-B"
         },
         "Actions": {
-          "injectPacketLoss": {
+          "stopApache": {
             "ActionId": "aws:ssm:send-command",
             "Parameters": {
               "duration": "PT32M",
