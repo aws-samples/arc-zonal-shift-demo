@@ -33,7 +33,7 @@ First list the experiment templates available...
 
 Identify the experiment you wish to start (e.g. PacketLossOnInstancesIn-AZ-B), then use the experiment ID:
 
-aws fis start-experiment --experiment-template-id EXT4FjG6mLPaErxG
+% aws fis start-experiment --experiment-template-id EXT4FjG6mLPaErxG
 
 
 ## How to perform a zonal shift
