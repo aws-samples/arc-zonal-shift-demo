@@ -25,6 +25,30 @@ Use the command below, but swap in a valid email address
         --capabilities CAPABILITY_NAMED_IAM \
         --parameters 'ParameterKey=OperatorEMail,ParameterValue=$EMAIL'
 
+## How to start an experiment
+
+First list the experiment templates available...
+
+% aws fis list-experiment-templates 
+
+Identify the experiment you wish to start (e.g. PacketLossOnInstancesIn-AZ-B), then use the experiment ID:
+
+aws fis start-experiment --experiment-template-id EXT4FjG6mLPaErxG
+
+
+## How to perform a zonal shift
+
+Fill in the ARN and AZ you want to shift away from below.
+
+% aws arc-zonal-shift start-zonal-shift \
+		--away-from apse2-az1 \
+		--expires-in 30m \
+		--resource-identifier "arn:aws:elasticloadbalancing:ap-southeast-2:123456789012:loadbalancer/net/zonal-shift-demo/xxxxxxxxxxxxxxxx" \
+		--comment "shift away from AZ B"
+
+
+
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
