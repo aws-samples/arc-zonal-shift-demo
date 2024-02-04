@@ -318,7 +318,7 @@
     },
 
     "ElasticLoadBalancer": {
-      "DependsOn": "WebServerIGW",
+      "DependsOn": ["WebServerIGW", "WebserverIGWAttachment"],
       "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
       "Properties" : {
         "IpAddressType" : "ipv4",
