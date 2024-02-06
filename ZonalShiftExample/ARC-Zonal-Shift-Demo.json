@@ -704,7 +704,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.1",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
@@ -782,7 +782,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.1",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
@@ -860,7 +860,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.1",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
@@ -938,7 +938,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.1",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
