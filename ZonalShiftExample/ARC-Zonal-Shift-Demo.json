@@ -639,6 +639,15 @@
         "BucketName": {
           "Fn::Sub": "cw-syn-results-${AWS::AccountId}-${AWS::Region}"
         },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "DeleteEverything",
+              "ExpirationInDays": 1,
+              "Status": "Enabled"
+            }
+          ]
+        },
         "BucketEncryption": {
           "ServerSideEncryptionConfiguration": [
             {
@@ -704,7 +713,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.2",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
@@ -782,7 +791,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.2",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
@@ -860,7 +869,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.2",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
@@ -938,7 +947,7 @@
             "Arn"
           ]
         },
-        "RuntimeVersion": "syn-nodejs-puppeteer-3.7",
+        "RuntimeVersion": "syn-nodejs-puppeteer-6.2",
         "RunConfig": {
           "TimeoutInSeconds": 45
         },
