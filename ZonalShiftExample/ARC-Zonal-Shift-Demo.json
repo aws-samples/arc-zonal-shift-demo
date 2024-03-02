@@ -5,8 +5,8 @@
     "InstanceType" : {
       "Description" : "WebServer EC2 instance type",
       "Type" : "String",
-      "Default" : "t3.medium",
-      "AllowedValues" : [ "t3.medium" ],
+      "Default" : "t3.nano",
+      "AllowedValues" : [ "t3.nano" ],
       "ConstraintDescription" : "must be a valid EC2 instance type."
     },
 
@@ -33,7 +33,7 @@
 
   "Mappings" : {
     "AWSInstanceType2Arch" : {
-      "t3.medium"   : { "Arch" : "HVM64"  }
+      "t3.nano"   : { "Arch" : "HVM64"  }
     },
 
     "AWSRegionArch2AMI" : {
