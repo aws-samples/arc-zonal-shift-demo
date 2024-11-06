@@ -322,7 +322,7 @@
       "Type" : "AWS::ElasticLoadBalancingV2::LoadBalancer",
       "Properties" : {
         "IpAddressType" : "ipv4",
-        "LoadBalancerAttributes" : [ ],
+        "LoadBalancerAttributes" : [ { "Key": "zonal_shift.config.enabled", "Value": "true" } ],
         "Name" : "zonal-shift-demo",
         "Scheme" : "internet-facing",
         "Subnets" : [ { "Ref": "WebserverSubnetA" }, { "Ref": "WebserverSubnetB" } , { "Ref": "WebserverSubnetC" } ],
@@ -352,6 +352,7 @@
         "Name" : "MyELBTG",
         "Port" : 80,
         "Protocol" : "TCP",
+        "TargetGroupAttributes" : [ { "Key": "target_health_state.unhealthy.connection_termination.enabled", "Value": "false" } ],
         "VpcId" : { "Ref": "WebServerVPC" }
       }
     },
